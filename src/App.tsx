@@ -6,6 +6,13 @@ interface AnalysisResult {
   chunk_index: number;
   text_chunk: string;
   analysis: string;
+  is_complete?: boolean;
+}
+
+interface TokenUpdate {
+  chunk_index: number;
+  token: string;
+  is_complete: boolean;
 }
 
 function App() {
@@ -86,7 +93,7 @@ function App() {
           const dataString = dataMatch ? dataMatch[1].trim() : null;
 
           // Only attempt to parse if we have data AND it's an event type we expect JSON from
-          if (dataString && (event === 'tone' || event === 'chunk' || event === 'error')) {
+          if (dataString && (event === 'tone' || event === 'chunk' || event === 'token' || event === 'error')) {
             try {
               const data = JSON.parse(dataString);
 
@@ -94,8 +101,46 @@ function App() {
                 console.log("Received tone:", data.overall_tone);
                 setOverallTone(data.overall_tone);
               } else if (event === 'chunk') {
-                console.log("Received chunk:", data.chunk_index);
-                setResults(prevResults => [...prevResults, data]);
+                console.log("Received chunk:", data.chunk_index, "is_complete:", data.is_complete);
+                
+                if (data.is_complete) {
+                  // Final update for this chunk with complete analysis
+                  setResults(prevResults => {
+                    // Find and replace the existing chunk if it exists
+                    const exists = prevResults.some(r => r.chunk_index === data.chunk_index);
+                    
+                    if (exists) {
+                      return prevResults.map(r => 
+                        r.chunk_index === data.chunk_index ? data : r
+                      );
+                    } else {
+                      return [...prevResults, data];
+                    }
+                  });
+                } else {
+                  // Initial chunk setup
+                  setResults(prevResults => {
+                    // Only add if it doesn't exist yet
+                    const exists = prevResults.some(r => r.chunk_index === data.chunk_index);
+                    if (!exists) {
+                      return [...prevResults, data];
+                    }
+                    return prevResults;
+                  });
+                }
+              } else if (event === 'token') {
+                // Update the current chunk with the new token
+                setResults(prevResults => {
+                  return prevResults.map(result => {
+                    if (result.chunk_index === data.chunk_index) {
+                      return {
+                        ...result,
+                        analysis: result.analysis + data.token
+                      };
+                    }
+                    return result;
+                  });
+                });
               } else if (event === 'error') {
                 console.error("Received stream error:", data.error);
                 setError(data.error);
@@ -158,6 +203,7 @@ function App() {
               {[...results].sort((a, b) => a.chunk_index - b.chunk_index).map((result) => (
                 <li key={result.chunk_index} className="analysis-comment">
                   <strong>Chunk {result.chunk_index + 1}:</strong> {result.analysis}
+                  {!result.is_complete && result.analysis && <span className="typing-indicator">▌</span>}
                 </li>
               ))}
             </ul>

@@ -52,7 +52,7 @@ load_model_and_tokenizer() # Load the model when the application starts
 # --- End Model Loading ---
 
 # --- Inference Helper ---
-def run_inference(prompt_text, system_message="You are a helpful assistant.", max_new_tokens=128):
+def run_inference(prompt_text, system_message="You are a helpful assistant.", max_new_tokens=128, stream=False):
     """Runs inference using the loaded model and tokenizer."""
     if not model or not tokenizer:
         logging.error("Model or tokenizer not loaded, cannot run inference.")
@@ -82,21 +82,59 @@ def run_inference(prompt_text, system_message="You are a helpful assistant.", ma
         ).to(DEVICE) # Move inputs to the same device as the model
 
         logging.info(f"Running inference on {DEVICE} with max_new_tokens={max_new_tokens}...")
-        with torch.inference_mode():
-            # Generate outputs
-            outputs = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+        
+        if stream:
+            # For streaming mode, use the streaming generator
+            input_token_len = inputs["input_ids"].shape[1]
+            return generate_stream(inputs, input_token_len, max_new_tokens)
+        else:
+            # Non-streaming mode (batch generation)
+            with torch.inference_mode():
+                # Generate outputs
+                outputs = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
 
-        # Decode the output tokens
-        input_token_len = inputs["input_ids"].shape[1]
-        generated_tokens = outputs[0][input_token_len:]
-        result_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+            # Decode the output tokens
+            input_token_len = inputs["input_ids"].shape[1]
+            generated_tokens = outputs[0][input_token_len:]
+            result_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
 
-        logging.info("Inference completed.")
-        return result_text.strip()
+            logging.info("Inference completed.")
+            return result_text.strip()
 
     except Exception as e:
         logging.error(f"Error during inference: {e}")
         return None
+
+def generate_stream(inputs, input_token_len, max_new_tokens=128):
+    """Generator function that yields tokens as they're generated."""
+    generated_text = ""
+    
+    # Initialize generation with input ids 
+    generation = inputs["input_ids"].clone()
+    
+    with torch.inference_mode():
+        for _ in range(max_new_tokens):
+            # Run model on current sequence
+            outputs = model(generation)
+            next_token_logits = outputs.logits[:, -1, :]
+            
+            # Get the next token (greedy selection)
+            next_token = torch.argmax(next_token_logits, dim=-1, keepdim=True)
+            
+            # Break if EOS token
+            if next_token.item() == tokenizer.eos_token_id:
+                break
+                
+            # Append token to the sequence
+            generation = torch.cat([generation, next_token], dim=-1)
+            
+            # Decode just the new token
+            new_token_text = tokenizer.decode(next_token[0], skip_special_tokens=True)
+            
+            # Only yield if there's actual text
+            if new_token_text:
+                generated_text += new_token_text
+                yield new_token_text
 
 # --- End Inference Helper ---
 
@@ -149,6 +187,8 @@ def analyze_document():
             # 1. Determine Overall Tone (Global LLM task)
             logging.info("Determining overall tone...")
             tone_prompt = f"""Analyze the following text and determine its primary purpose or tone. Respond with only ONE OR TWO words from this list: [Personal Reflection, Academic Note, Creative Writing, Technical Instruction, Correction Needed, Idea Generation, Factual Summary, Question Posing].\n\n                        Text:\n                        ---\n                        {full_text}\n                        ---\n\n                        Primary Purpose/Tone:"""
+            
+            # First generate tone - not using streaming for this part
             determined_tone = run_inference(tone_prompt, system_message="You are an expert text analyst.", max_new_tokens=10)
 
             if not determined_tone:
@@ -176,28 +216,57 @@ def analyze_document():
                 system_message_local = f"You are an assistant analyzing a text identified as: {determined_tone}."
                 prompt_local = f"""Given the overall text is identified as '{determined_tone}', analyze the following excerpt.\n\n                        Provide a brief analysis, suggestion, or reflection relevant to the tone. For example:\n                        - If 'Correction Needed', suggest grammatical or factual corrections.\n                        - If 'Personal Reflection', offer a thoughtful comment or question.\n                        - If 'Academic Note', summarize the key point or ask a clarifying question.\n                        - If 'Idea Generation', suggest a related idea or how to expand on it.\n\n                        Excerpt:\n                        ---\n                        {chunk_text}\n                        ---\n\n                        Analysis/Suggestion:"""
 
-                chunk_analysis = run_inference(
+                # Use streaming mode for chunk analysis
+                chunk_analysis_stream = run_inference(
                     prompt_local,
                     system_message=system_message_local,
-                    max_new_tokens=100
+                    max_new_tokens=100,
+                    stream=True
                 )
-
+                
+                # Initialize empty analysis for this chunk
+                current_analysis = ""
+                
+                # Send an initial chunk event to establish this chunk index
                 result_data = {
                     "chunk_index": chunk_index,
-                    "text_chunk": chunk_text, # Include chunk text for context if needed later
-                    "analysis": chunk_analysis if chunk_analysis else "[Error during analysis]"
+                    "text_chunk": chunk_text,
+                    "analysis": "",
+                    "is_complete": False
                 }
-
-                # Yield the chunk analysis event
                 chunk_payload = json.dumps(result_data)
                 yield f"event: chunk\ndata: {chunk_payload}\n\n"
-
-                if not chunk_analysis:
-                    logging.warning(f"Failed to analyze chunk {chunk_index + 1}")
-
+                
+                # Stream tokens as they're generated
+                try:
+                    for token in chunk_analysis_stream:
+                        current_analysis += token
+                        
+                        # Send token update
+                        token_data = {
+                            "chunk_index": chunk_index,
+                            "token": token,
+                            "is_complete": False
+                        }
+                        token_payload = json.dumps(token_data)
+                        yield f"event: token\ndata: {token_payload}\n\n"
+                except Exception as e:
+                    logging.error(f"Error streaming chunk {chunk_index}: {e}")
+                    current_analysis = "[Error during analysis]"
+                
+                # Send final completed chunk data
+                complete_data = {
+                    "chunk_index": chunk_index,
+                    "text_chunk": chunk_text,
+                    "analysis": current_analysis,
+                    "is_complete": True
+                }
+                complete_payload = json.dumps(complete_data)
+                yield f"event: chunk\ndata: {complete_payload}\n\n"
+                
                 chunk_index += 1
 
-            # Signal the end of the stream (optional but good practice)
+            # Signal the end of the stream
             yield f"event: end\ndata: Stream finished\n\n"
             logging.info("Analysis stream complete.")
 
