@@ -616,3 +616,210 @@ button:hover:not(:disabled) {
 .badge-value {
   color: #202124;
 }
+
+/* Document List Styles */
+.document-list-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.document-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.document-controls {
+  display: flex;
+  gap: 1rem;
+}
+
+.search-container {
+  position: relative;
+}
+
+.search-input {
+  padding: 0.75rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  width: 250px;
+  font-size: 1rem;
+}
+
+.clear-search {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  color: #666;
+}
+
+.create-document-btn {
+  background-color: #1a73e8;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.create-document-btn:hover {
+  background-color: #1557b0;
+}
+
+.no-documents {
+  text-align: center;
+  padding: 3rem;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+  color: #666;
+}
+
+.document-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.document-card {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: box-shadow 0.2s, transform 0.2s;
+  cursor: pointer;
+  background-color: white;
+}
+
+.document-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.document-preview {
+  height: 160px;
+  padding: 1rem;
+  background-color: #f5f7fa;
+  border-bottom: 1px solid #e0e0e0;
+  overflow: hidden;
+}
+
+.preview-content {
+  font-size: 0.9rem;
+  color: #333;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.empty-preview {
+  color: #999;
+  font-style: italic;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+}
+
+.document-info {
+  padding: 1rem;
+}
+
+.document-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  color: #1a73e8;
+}
+
+.document-date {
+  font-size: 0.8rem;
+  color: #666;
+  margin-bottom: 0.5rem;
+}
+
+.delete-document-btn {
+  background-color: #f44336;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.delete-document-btn:hover {
+  background-color: #d32f2f;
+}
+
+/* Document Editor Styles */
+.document-editor {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.document-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 0;
+  border-bottom: 1px solid #e0e0e0;
+  margin-bottom: 1rem;
+}
+
+.back-button {
+  background: none;
+  border: none;
+  color: #1a73e8;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.5rem 0;
+}
+
+.document-title-input {
+  border: none;
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: #333;
+  flex-grow: 1;
+  margin: 0 1rem;
+  padding: 0.5rem;
+  text-align: center;
+}
+
+.document-title-input:focus {
+  outline: none;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+}
+
+.analyze-button {
+  background-color: #1a73e8;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.analyze-button:hover {
+  background-color: #1557b0;
+}
+
+.analyze-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
