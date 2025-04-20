@@ -1,7 +1,9 @@
 #root {
-  margin: 0 auto;
+  margin: 0;
   font-family: 'Roboto', Arial, sans-serif;
   color: #202124;
+  width: 100%;
+  max-width: 100%;
 }
 
 body {
@@ -49,8 +51,10 @@ body {
   display: flex;
   flex-direction: column;
   padding: 1rem;
-  max-width: 90%;
+  width: 100%;
+  max-width: 100%;
   margin: 0 auto;
+  box-sizing: border-box;
 }
 
 h1 {
@@ -74,9 +78,11 @@ h1 {
   background-color: #fff;
   border-radius: 8px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
-  height: 70vh;
+  height: 75vh;
   position: relative;
   margin-bottom: 20px;
+  width: 100%;
+  overflow: hidden;
 }
 
 .doc-content {
@@ -84,6 +90,7 @@ h1 {
   display: flex;
   flex-direction: column;
   border-right: 1px solid #e0e0e0;
+  overflow: hidden;
 }
 
 .doc-header {
@@ -91,6 +98,7 @@ h1 {
   border-bottom: 1px solid #e0e0e0;
   background-color: #f8f9fa;
   border-top-left-radius: 8px;
+  z-index: 10;
 }
 
 .doc-title {
@@ -155,8 +163,29 @@ h1 {
 
 .doc-body {
   flex: 1;
-  padding: 20px 30px;
   overflow-y: auto;
+  padding: 0;
+  background-color: #f0f0f0;
+}
+
+.doc-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  min-height: 100%;
+}
+
+.doc-page {
+  width: 100%;
+  max-width: 650px;
+  margin-bottom: 30px;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.15);
+  background-color: white;
+  position: relative;
+  min-height: 800px;
+  padding: 40px;
+  border-radius: 2px;
 }
 
 .doc-textarea {
@@ -169,6 +198,18 @@ h1 {
   outline: none;
   font-family: 'Arial', sans-serif;
   padding: 0;
+  background-color: transparent;
+  min-height: 750px;
+}
+
+.page-number {
+  position: absolute;
+  bottom: 10px;
+  width: 100%;
+  text-align: center;
+  left: 0;
+  color: #777;
+  font-size: 12px;
 }
 
 .doc-comments {
@@ -176,11 +217,9 @@ h1 {
   background-color: #f8f9fa;
   border-top-right-radius: 8px;
   border-bottom-right-radius: 8px;
-  position: relative;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 120px);
+  height: 100%;
 }
 
 .comments-header {
@@ -222,16 +261,16 @@ h1 {
 }
 
 .comments-container {
-  position: relative;
   flex: 1;
+  overflow-y: auto;
   padding: 20px 12px;
+  position: relative;
+  height: calc(100% - 60px);
 }
 
 .comment-bubble {
-  position: absolute;
-  right: 16px;
-  width: 90%;
-  z-index: 2;
+  margin-bottom: 16px;
+  width: 100%;
 }
 
 .comment-content {
@@ -239,7 +278,6 @@ h1 {
   border-radius: 8px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   padding: 12px;
-  margin-bottom: 16px;
   position: relative;
   border-left: 4px solid #4285f4;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -416,4 +454,165 @@ button:hover:not(:disabled) {
   margin: 6px 0;
   font-size: 14px;
   color: #444;
+}
+
+/* Completion notification */
+.completion-notification {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background-color: #4caf50;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 4px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  animation: fadeInOut 3s ease-in-out;
+  z-index: 1000;
+  font-weight: 500;
+}
+
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateY(20px); }
+  15% { opacity: 1; transform: translateY(0); }
+  85% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-20px); }
+}
+
+.analysis-session-divider {
+  width: 100%;
+  text-align: center;
+  margin: 16px 0;
+  position: relative;
+  z-index: 2;
+}
+
+.analysis-session-divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background-color: #dadce0;
+  z-index: -1;
+}
+
+.analysis-session-divider span {
+  background-color: #f8f9fa;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #5f6368;
+}
+
+.comment-group {
+  position: relative;
+  margin-bottom: 20px;
+}
+
+/* Make the comments container scrollable */
+.comments-container {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+  padding-top: 10px;
+  padding-bottom: 20px;
+}
+
+/* Clear button */
+.clear-button {
+  background-color: #db4437;
+}
+
+.clear-button:hover {
+  background-color: #c53929;
+}
+
+/* Session divider in comments */
+.session-divider {
+  margin: 20px 0;
+  padding: 8px;
+  background-color: #f7fafc;
+  border-radius: 4px;
+  text-align: center;
+  font-weight: bold;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+/* Highlight toggle button */
+.highlight-toggle {
+  margin-left: 12px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.2s;
+}
+
+/* Text highlighting related styles */
+.textarea-with-highlights {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.doc-textarea {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  background-color: transparent;
+  color: #000;
+  caret-color: #000;
+}
+
+.highlight-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  padding: 40px;
+  font-family: 'Arial', sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  box-sizing: border-box;
+  color: transparent;
+}
+
+.highlighted-text {
+  background-color: rgba(255, 230, 0, 0.3);
+  border-radius: 2px;
+}
+
+/* Global analysis badge styles */
+.global-analysis-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  font-size: 12px;
+}
+
+.global-analysis-item {
+  background-color: #e8f0fe;
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.badge-label {
+  color: #1a73e8;
+  font-weight: 500;
+  margin-right: 3px;
+}
+
+.badge-value {
+  color: #202124;
 }
