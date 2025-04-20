@@ -10,6 +10,7 @@ import argparse
 import logging
 import subprocess
 import time
+import threading
 
 # Configure logging
 logging.basicConfig(
@@ -33,6 +34,8 @@ def parse_args():
     parser.add_argument("--timeout", default=120, type=int, help="Worker timeout in seconds (default: 120)")
     parser.add_argument("--preload", action="store_true", 
                         help="Preload model before starting workers (good for production, uses more memory)")
+    parser.add_argument("--reload", action="store_true",
+                        help="Auto-reload server when code changes (development only)")
     return parser.parse_args()
 
 def preload_model():
@@ -59,6 +62,20 @@ def preload_model():
         logger.error(f"Error during model preloading: {e}")
         return False
 
+def preload_async():
+    """Preload model in a separate thread to avoid blocking server startup."""
+    def _preload_worker():
+        try:
+            preload_model()
+        except Exception as e:
+            logger.error(f"Async preload failed: {e}")
+    
+    thread = threading.Thread(target=_preload_worker)
+    thread.daemon = True
+    thread.start()
+    logger.info("Started async model preloading")
+    return thread
+
 def main():
     """Main function to launch the server."""
     args = parse_args()
@@ -68,13 +85,18 @@ def main():
     
     # Get the absolute path of the app.py file
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    app_path = os.path.join(current_dir, "app.py")
     
     # Preload model if requested
+    preload_thread = None
     if args.preload and not args.debug:
-        success = preload_model()
-        if not success:
-            logger.warning("Continuing without preloaded model. It will be loaded on first request.")
+        if args.workers > 1:
+            # For multiple workers, preload synchronously to avoid duplicate loading
+            success = preload_model()
+            if not success:
+                logger.warning("Continuing without preloaded model. It will be loaded on first request.")
+        else:
+            # For single worker, we can preload asynchronously
+            preload_thread = preload_async()
     
     if args.debug:
         logger.info(f"Starting Flask development server on {args.host}:{args.port} in debug mode")
@@ -100,10 +122,19 @@ def main():
         if args.preload:
             cmd.append("--preload")
             
+        # Add reload flag if requested
+        if args.reload:
+            cmd.append("--reload")
+            
         # Add app path
         cmd.append("app:app")  # app.py main Flask app
         
         try:
+            # Wait for preload thread to finish if it exists
+            if preload_thread and preload_thread.is_alive():
+                logger.info("Waiting for model preloading to complete...")
+                preload_thread.join(timeout=60)  # Don't wait forever
+                
             subprocess.run(cmd, cwd=current_dir, check=True)
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to start Gunicorn server: {e}")

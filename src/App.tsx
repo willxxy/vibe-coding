@@ -34,17 +34,17 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState<boolean>(false);
   const [retryCount, setRetryCount] = useState<number>(0);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const expectedChunksRef = useRef<number>(0);
   const [showCompletionNotice, setShowCompletionNotice] = useState<boolean>(false);
   const [analysisTime, setAnalysisTime] = useState<string>('');
   
-  // Optimize token updates batching for performance
+  // References for managing analysis state
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const expectedChunksRef = useRef<number>(0);
+  const analysisSessionRef = useRef<number>(0);
+  
+  // Optimize token updates batching
   const pendingTokensRef = useRef<Map<number, string>>(new Map());
   const tokenUpdateTimeoutRef = useRef<number | null>(null);
-  
-  // Track the current analysis session
-  const analysisSessionRef = useRef<number>(0);
   
   // Check if all analysis chunks are complete
   const checkIfAnalysisComplete = useCallback(() => {
@@ -93,7 +93,7 @@ function App() {
     };
   }, [closeConnection]);
 
-  // Flush pending tokens to state more efficiently
+  // Flush pending tokens to state efficiently
   const flushTokenUpdates = useCallback(() => {
     if (pendingTokensRef.current.size === 0) return;
     
@@ -124,7 +124,7 @@ function App() {
     tokenUpdateTimeoutRef.current = null;
   }, []);
 
-  // More intelligent token batching system
+  // Schedule token flush with debouncing
   const scheduleTokenFlush = useCallback(() => {
     if (tokenUpdateTimeoutRef.current !== null) return;
     
@@ -177,6 +177,7 @@ function App() {
     scheduleTokenFlush();
   }, [scheduleTokenFlush]);
 
+  // Main analyze function
   const handleAnalyze = async () => {
     closeConnection();
     setIsLoading(true);
@@ -214,7 +215,7 @@ function App() {
         },
         body: JSON.stringify({ 
           text,
-          chunk_size: 3 // You can make this configurable if needed
+          chunk_size: 3
         }),
         signal,
       });
@@ -248,7 +249,7 @@ function App() {
 
         buffer += decoder.decode(value, { stream: true });
         
-        // Handle event boundaries better
+        // Handle event boundaries
         const events = buffer.split('\n\n');
         // Keep the last partial event in the buffer
         buffer = events.pop() || '';
@@ -256,7 +257,7 @@ function App() {
         for (const event of events) {
           if (!event.trim()) continue;
 
-          // Parse SSE format more reliably
+          // Parse SSE format
           const lines = event.split('\n');
           let eventType = '';
           let data = '';
@@ -318,7 +319,7 @@ function App() {
                   );
                   
                   if (existingIndex >= 0) {
-                    // Only update if necessary to prevent redundant renders
+                    // Only update if necessary
                     if (
                       prevResults[existingIndex].is_complete !== chunkWithSession.is_complete ||
                       prevResults[existingIndex].text_chunk !== chunkWithSession.text_chunk ||
@@ -408,7 +409,7 @@ function App() {
     }, backoffTime);
   }, [retryCount]);
   
-  // Clear all analyses 
+  // Clear all analyses
   const handleClearAnalyses = useCallback(() => {
     setResults([]);
     setGlobalAnalyses([]);

@@ -1,10 +1,10 @@
 import torch
-from flask import Flask, request, jsonify, Response # Import Response
-from flask_cors import CORS # Import CORS
+from flask import Flask, request, jsonify, Response
+from flask_cors import CORS
 from transformers import AutoTokenizer, Gemma3ForCausalLM
 import logging
-import re # For simple sentence splitting
-import json # Import json for formatting SSE data
+import re
+import json
 import functools
 import time
 import threading
@@ -13,7 +13,7 @@ import threading
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 app = Flask(__name__)
-CORS(app) # Enable CORS for the entire app
+CORS(app)
 
 # --- Device Setup ---
 def get_device():
@@ -31,16 +31,13 @@ def get_device():
 
 DEVICE = get_device()
 logging.info(f"Using device: {DEVICE}")
-# --- End Device Setup ---
 
 # --- Model Loading ---
-MODEL_ID = "google/gemma-3-1b-it"  # Using the same model for both global and local LLM
+MODEL_ID = "google/gemma-3-1b-it"  # Same model for both global and local LLM
 
 # Global variables for models and tokenizers
 model = None
 tokenizer = None
-
-# Add model loading lock to prevent concurrent loading
 model_loading_lock = threading.Lock()
 
 def load_model_and_tokenizer():
@@ -100,7 +97,6 @@ try:
 except Exception as e:
     logging.error(f"Error during startup model loading: {e}")
     models_ready = False
-# --- End Model Loading ---
 
 # --- Inference Helper ---
 @timeout(60)
@@ -129,7 +125,7 @@ def run_inference(prompt_text, system_message="You are a helpful assistant.", ma
     ]]
 
     try:
-        # Use the tokenizer's chat template and move inputs to the correct device
+        # Use the tokenizer's chat template and move inputs to the device
         inputs = tokenizer.apply_chat_template(
             messages,
             add_generation_prompt=True,
@@ -154,10 +150,7 @@ def run_inference(prompt_text, system_message="You are a helpful assistant.", ma
                 outputs = model.generate(
                     **inputs, 
                     max_new_tokens=max_new_tokens, 
-                    do_sample=False,
-                    # Clear unneeded params
-                    top_p=None,
-                    top_k=None
+                    do_sample=False
                 )
 
             # Decode the output tokens
@@ -203,10 +196,6 @@ def generate_stream(inputs, input_token_len, max_new_tokens=128):
             # Only yield if there's actual text
             if new_token_text:
                 yield new_token_text
-                # Small delay for visible streaming (can be adjusted based on needs)
-                time.sleep(0.01)
-
-# --- End Inference Helper ---
 
 # --- Text Processing Helpers ---
 def split_into_sentences(text):
@@ -232,7 +221,7 @@ def split_into_sentences(text):
     
     return sentences
 
-def create_text_chunks(text, chunk_size_n=3, overlap=1):
+def create_text_chunks(text, chunk_size=3, overlap=1):
     """Split text into overlapping chunks of roughly n sentences each."""
     sentences = split_into_sentences(text)
     
@@ -244,19 +233,17 @@ def create_text_chunks(text, chunk_size_n=3, overlap=1):
     i = 0
     
     while i < len(sentences):
-        # Get chunk of size chunk_size_n or remaining sentences
-        end_idx = min(i + chunk_size_n, len(sentences))
+        # Get chunk of size chunk_size or remaining sentences
+        end_idx = min(i + chunk_size, len(sentences))
         chunk = " ".join(sentences[i:end_idx])
         chunks.append(chunk)
         
         # Move window with overlap
-        i = i + max(1, chunk_size_n - overlap)
+        i = i + max(1, chunk_size - overlap)
     
     return chunks
 
-# --- End Text Processing Helpers ---
-
-
+# --- API Routes ---
 @app.route('/')
 def home():
     return "Backend server is running!"
@@ -278,8 +265,8 @@ def analyze_document():
     if not data or 'text' not in data:
         return jsonify({"error": "Missing 'text' in request body"}), 400
         
-    chunk_size_n = data.get('chunk_size', 3)
-    if not isinstance(chunk_size_n, int) or chunk_size_n <= 0:
+    chunk_size = data.get('chunk_size', 3)
+    if not isinstance(chunk_size, int) or chunk_size <= 0:
         return jsonify({"error": "'chunk_size' must be a positive integer"}), 400
         
     full_text = data['text']
@@ -288,28 +275,26 @@ def analyze_document():
 
     def generate_analysis():
         try:
-            # --- Global LLM Analysis (Document-wide) ---
+            # Start timer for the whole process
             start_time = time.time()
-            logging.info("Performing global document analysis...")
             
             # Send initial progress update to client
-            progress_data = {"message": "Starting document analysis..."}
-            progress_payload = json.dumps(progress_data)
-            yield f"event: progress\ndata: {progress_payload}\n\n"
+            yield f"event: progress\ndata: {json.dumps({'message': 'Starting document analysis...'})}\n\n"
             
-            # Limit text size to improve performance
+            # --- Global LLM Analysis ---
+            # Limit text size for analysis
             text_for_analysis = full_text
             if len(text_for_analysis) > 8000:
                 logging.warning(f"Document too large ({len(text_for_analysis)} chars), truncating for analysis")
                 text_for_analysis = full_text[:8000] + "... [document truncated for analysis]"
             
-            # More comprehensive global analysis in a single prompt with shorter expected response
+            # Global analysis prompt
             global_prompt = f"""Analyze the following text and provide these specific details:
 1. PRIMARY TONE: ONE word describing tone (e.g., casual, formal, academic)
 2. SUBJECT MATTER: ONE or TWO words describing topic
 3. CONTEXT SUMMARY: 1-2 sentences summarizing the text
 
-Be very concise. Keep your response short.
+Be very concise.
 
 Text:
 ---
@@ -322,10 +307,9 @@ SUBJECT: [one or two words]
 SUMMARY: [1-2 sentence summary]"""
             
             # Progress update
-            progress_data = {"message": "Analyzing document context..."}
-            progress_payload = json.dumps(progress_data)
-            yield f"event: progress\ndata: {progress_payload}\n\n"
+            yield f"event: progress\ndata: {json.dumps({'message': 'Analyzing document context...'})}\n\n"
             
+            # Run global analysis
             global_analysis_text = run_inference(
                 global_prompt, 
                 system_message="You are an expert text analyst. Be concise.", 
@@ -334,12 +318,8 @@ SUMMARY: [1-2 sentence summary]"""
 
             if not global_analysis_text:
                 logging.error("Failed to complete global analysis. Stopping stream.")
-                error_payload = json.dumps({"error": "Failed to determine global text attributes."})
-                yield f"event: error\ndata: {error_payload}\n\n"
+                yield f"event: error\ndata: {json.dumps({'error': 'Failed to determine global text attributes.'})}\n\n"
                 return
-            
-            first_stage_time = time.time() - start_time
-            logging.info(f"Global analysis completed in {first_stage_time:.2f}s")
             
             # Parse the structured response
             tone_match = re.search(r'TONE:\s*(.*?)(?:\n|$)', global_analysis_text)
@@ -358,23 +338,17 @@ SUMMARY: [1-2 sentence summary]"""
             }
             
             # Send global analysis to client
-            global_payload = json.dumps(global_analysis)
-            yield f"event: global_analysis\ndata: {global_payload}\n\n"
+            yield f"event: global_analysis\ndata: {json.dumps(global_analysis)}\n\n"
             
-            # --- Local LLM Processing (Chunk-based) ---
-            logging.info(f"Chunking text for local processing...")
-            
+            # --- Local LLM Processing ---
             # Progress update
-            progress_data = {"message": "Preparing text chunks..."}
-            progress_payload = json.dumps(progress_data)
-            yield f"event: progress\ndata: {progress_payload}\n\n"
+            yield f"event: progress\ndata: {json.dumps({'message': 'Preparing text chunks...'})}\n\n"
             
-            # Use smaller chunk size for faster processing
-            effective_chunk_size = min(chunk_size_n, 2)
-            text_chunks = create_text_chunks(full_text, effective_chunk_size, overlap=0)
+            # Create text chunks with optimal size
+            text_chunks = create_text_chunks(full_text, chunk_size=min(chunk_size, 3), overlap=0)
             
             # Limit number of chunks for performance
-            max_chunks = 10
+            max_chunks = 15
             if len(text_chunks) > max_chunks:
                 logging.warning(f"Too many chunks ({len(text_chunks)}), limiting to {max_chunks}")
                 text_chunks = text_chunks[:max_chunks]
@@ -385,11 +359,11 @@ SUMMARY: [1-2 sentence summary]"""
                 
             logging.info(f"Created {len(text_chunks)} chunks for analysis")
 
-            # Create a more concise system message
+            # Create system message for local LLM
             system_message_local = f"""You are analyzing a document with tone: {tone}, subject: {subject_matter}.
 Provide brief, helpful responses about each excerpt."""
 
-            # Process chunks in sequence
+            # Process chunks
             for chunk_index, chunk_content in enumerate(text_chunks):
                 chunk_trim = chunk_content.strip()
                 if not chunk_trim:
@@ -398,11 +372,9 @@ Provide brief, helpful responses about each excerpt."""
                 logging.info(f"Analyzing chunk {chunk_index + 1}/{len(text_chunks)}")
                 
                 # Progress update
-                progress_data = {"message": f"Analyzing section {chunk_index + 1}/{len(text_chunks)}..."}
-                progress_payload = json.dumps(progress_data)
-                yield f"event: progress\ndata: {progress_payload}\n\n"
+                yield f"event: progress\ndata: {json.dumps({'message': f'Analyzing section {chunk_index + 1}/{len(text_chunks)}...'})}\n\n"
                 
-                # Create a simpler prompt for faster inference
+                # Create prompt for local LLM
                 prompt_local = f"""Given a document about {subject_matter} with {tone} tone, analyze:
 
 Excerpt:
@@ -412,36 +384,30 @@ Excerpt:
 
 Your brief response:"""
 
-                # Send an initial chunk event to establish this chunk index
+                # Send chunk initialization event
                 chunk_data = {
                     "chunk_index": chunk_index,
                     "text_chunk": chunk_trim,
                     "analysis": "",
                     "is_complete": False
                 }
-                chunk_payload = json.dumps(chunk_data)
-                yield f"event: chunk\ndata: {chunk_payload}\n\n"
+                yield f"event: chunk\ndata: {json.dumps(chunk_data)}\n\n"
                 
                 # Process the chunk and stream tokens
                 try:
                     chunk_analysis_stream = run_inference(
                         prompt_local,
                         system_message=system_message_local,
-                        max_new_tokens=100,  # Reduced token count for faster generation
+                        max_new_tokens=100,
                         stream=True
                     )
                     
                     if not chunk_analysis_stream:
                         logging.error(f"Failed to get stream for chunk {chunk_index}")
-                        error_data = {
-                            "chunk_index": chunk_index,
-                            "error": "Failed to analyze this chunk."
-                        }
-                        error_payload = json.dumps(error_data)
-                        yield f"event: error\ndata: {error_payload}\n\n"
+                        yield f"event: error\ndata: {json.dumps({'chunk_index': chunk_index, 'error': 'Failed to analyze this chunk.'})}\n\n"
                         continue
                     
-                    # Initialize empty analysis for this chunk
+                    # Initialize analysis text
                     current_analysis = ""
                     
                     # Stream tokens as they're generated
@@ -454,8 +420,7 @@ Your brief response:"""
                             "token": token,
                             "is_complete": False
                         }
-                        token_payload = json.dumps(token_data)
-                        yield f"event: token\ndata: {token_payload}\n\n"
+                        yield f"event: token\ndata: {json.dumps(token_data)}\n\n"
                 
                 except TimeoutError:
                     logging.error(f"Timeout during streaming for chunk {chunk_index}")
@@ -471,25 +436,19 @@ Your brief response:"""
                     "analysis": current_analysis,
                     "is_complete": True
                 }
-                complete_payload = json.dumps(complete_data)
-                yield f"event: chunk\ndata: {complete_payload}\n\n"
+                yield f"event: chunk\ndata: {json.dumps(complete_data)}\n\n"
 
             # Signal the end of the stream
             total_time = time.time() - start_time
-            end_data = {"time_taken": f"{total_time:.2f}s"}
-            end_payload = json.dumps(end_data)
-            yield f"event: end\ndata: {end_payload}\n\n"
+            yield f"event: end\ndata: {json.dumps({'time_taken': f'{total_time:.2f}s'})}\n\n"
             logging.info(f"Analysis stream complete. Total time: {total_time:.2f}s")
 
         except Exception as e:
             logging.error(f"Error during streaming analysis: {e}", exc_info=True)
-            # Yield a final error event if something unexpected happens
-            error_payload = json.dumps({"error": f"An unexpected error occurred during analysis: {str(e)}"})
-            yield f"event: error\ndata: {error_payload}\n\n"
+            yield f"event: error\ndata: {json.dumps({'error': f'An unexpected error occurred during analysis: {str(e)}'})}\n\n"
 
     # Return the streaming response
     return Response(generate_analysis(), mimetype='text/event-stream')
 
 if __name__ == '__main__':
-    # For development, Flask's built-in server is fine
     app.run(debug=True, host='0.0.0.0', port=5001) 

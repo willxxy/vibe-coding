@@ -23,6 +23,7 @@ interface GoogleDocEditorProps {
   globalAnalyses: GlobalAnalysis[];
   currentGlobalAnalysis: GlobalAnalysis | null;
   currentSession: number;
+  progressMessage: string;
 }
 
 // Memoized comment bubble component to reduce re-renders but still show token streaming
@@ -214,7 +215,8 @@ const GoogleDocEditor: React.FC<GoogleDocEditorProps> = ({
   isLoading,
   globalAnalyses,
   currentGlobalAnalysis,
-  currentSession
+  currentSession,
+  progressMessage
 }) => {
   const commentsContainerRef = useRef<HTMLDivElement>(null);
   const [pages, setPages] = useState<string[]>(['']);
@@ -594,7 +596,7 @@ const GoogleDocEditor: React.FC<GoogleDocEditorProps> = ({
           {isLoading && (
             <div className="comments-status">
               <div className="loading-spinner"></div>
-              <span>Analyzing document...</span>
+              <span>{progressMessage}</span>
             </div>
           )}
         </div>
