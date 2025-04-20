@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vibe-analysis-server"
+version = "0.1.0"
+authors = [
+  { name="Your Name", email="your.email@example.com" }, # TODO: Replace with your details
+]
+description = "Backend server for Vibe note analysis"
+readme = "README.md" # We should create this later
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License", # Choose an appropriate license
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "Flask>=2.0.0",
+    "transformers>=4.0.0", # For loading and using LLMs
+    "torch>=1.8.0", # Common backend for transformers
+    # Add other core dependencies here later (e.g., specific model requirements)
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    # Add linters, formatters, etc. here (e.g., black, flake8)
+]
+
+[project.urls]
+"Homepage" = "https://github.com/yourusername/vibe-coding" # TODO: Replace with your repo URL
+"Bug Tracker" = "https://github.com/yourusername/vibe-coding/issues" # TODO: Replace 
