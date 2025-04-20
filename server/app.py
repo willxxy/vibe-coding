@@ -213,11 +213,11 @@ def analyze_document():
             logging.info("Performing global document analysis...")
             
             # 1. Determine Overall Tone
-            tone_prompt = f"""Analyze the following text and determine its primary purpose or tone. Respond with only ONE OR TWO words from this list: [Personal Reflection, Academic Note, Creative Writing, Technical Instruction, Correction Needed, Idea Generation, Factual Summary, Question Posing].\n\n                        Text:\n                        ---\n                        {full_text}\n                        ---\n\n                        Primary Purpose/Tone:"""
+            tone_prompt = f"""Analyze the following text and determine its primary purpose or tone, regardless of its length. Even if it's very short, give your best assessment. Respond with only ONE OR TWO words from this list: [Personal Reflection, Academic Note, Creative Writing, Technical Instruction, Correction Needed, Idea Generation, Factual Summary, Question Posing].\n\n                        Text:\n                        ---\n                        {full_text}\n                        ---\n\n                        Primary Purpose/Tone:"""
             
             determined_tone = run_inference(
                 tone_prompt, 
-                system_message="You are an expert text analyst.", 
+                system_message="You are an expert text analyst. Your task is to analyze the given text, even if it's very short.", 
                 max_new_tokens=10, 
                 model_type="global"
             )
@@ -231,11 +231,11 @@ def analyze_document():
             logging.info(f"Determined tone: {determined_tone}")
             
             # 2. Determine Subject Matter
-            subject_prompt = f"""Analyze the following text and determine its subject matter or domain. Respond with only ONE OR TWO words describing what this text is about.\n\n                        Text:\n                        ---\n                        {full_text}\n                        ---\n\n                        Subject Matter:"""
+            subject_prompt = f"""Analyze the following text and determine its subject matter or domain, regardless of how short it is. For very short texts like greetings, you can label them appropriately (e.g., 'greeting', 'informal communication'). Respond with only ONE OR TWO words describing what this text is about.\n\n                        Text:\n                        ---\n                        {full_text}\n                        ---\n\n                        Subject Matter:"""
             
             subject_matter = run_inference(
                 subject_prompt, 
-                system_message="You are an expert text analyst.", 
+                system_message="You are an expert text analyst. Your task is to analyze the given text, no matter how short.", 
                 max_new_tokens=10, 
                 model_type="global"
             )
@@ -243,11 +243,11 @@ def analyze_document():
             logging.info(f"Determined subject matter: {subject_matter}")
             
             # 3. Generate a brief context summary
-            summary_prompt = f"""Provide a brief summary (2-3 sentences) of the following text that captures its main points or context.\n\n                        Text:\n                        ---\n                        {full_text}\n                        ---\n\n                        Summary:"""
+            summary_prompt = f"""Provide a brief context summary of the following text. Even if the text is very short (like a single word or greeting), describe it factually rather than asking for more text. Never respond as if you're waiting for input - just analyze what's provided.\n\n                        Text:\n                        ---\n                        {full_text}\n                        ---\n\n                        Context Summary (describe what this text is, don't ask for more):"""
             
             context_summary = run_inference(
                 summary_prompt, 
-                system_message="You are an expert text analyst.", 
+                system_message="You are an expert text analyst. Your task is to describe the given text factually, even if it's very short. Never ask for more text.", 
                 max_new_tokens=100, 
                 model_type="global"
             )
@@ -260,6 +260,10 @@ def analyze_document():
                 "subject_matter": subject_matter,
                 "context_summary": context_summary
             }
+            
+            # Log the global analysis for debugging
+            logging.info(f"Global Analysis: Tone='{determined_tone}', Subject='{subject_matter}'")
+            logging.info(f"Context Summary: {context_summary}")
             
             # Send global analysis to client
             global_payload = json.dumps(global_analysis)
@@ -281,9 +285,9 @@ def analyze_document():
                 - Subject: {subject_matter}
                 - Context: {context_summary}
                 
-                Provide responses appropriate for this context."""
+                Provide a response appropriate for this context. Even for very short texts or single words, you should provide an appropriate analysis or comment, without asking for more text."""
                 
-                prompt_local = f"""Given the overall document context, analyze the following excerpt and provide a helpful response. Only generate the response and nothing else.
+                prompt_local = f"""Given the overall document context, analyze the following excerpt and provide a helpful response. Just analyze what's provided, without asking for more text. Generate a concise, relevant response about this text excerpt.
                 
                 Excerpt:
                 ---
@@ -293,6 +297,9 @@ def analyze_document():
                 Your analysis/response:"""
 
                 # Use local LLM for streaming chunk analysis
+                logging.info(f"Sending chunk {chunk_index + 1} to local LLM with context: Tone='{determined_tone}', Subject='{subject_matter}'")
+                logging.info(f"Chunk text: '{chunk_text}'")
+                
                 chunk_analysis_stream = run_inference(
                     prompt_local,
                     system_message=system_message_local,
@@ -343,6 +350,15 @@ def analyze_document():
                 
                 chunk_index += 1
 
+            # Ensure all chunks are properly marked as complete
+            for idx in range(chunk_index):
+                complete_data = {
+                    "chunk_index": idx,
+                    "is_complete": True
+                }
+                complete_payload = json.dumps(complete_data)
+                yield f"event: chunk_complete\ndata: {complete_payload}\n\n"
+                
             # Signal the end of the stream
             yield f"event: end\ndata: Stream finished\n\n"
             logging.info("Analysis stream complete.")

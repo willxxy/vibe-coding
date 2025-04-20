@@ -180,6 +180,7 @@ h1 {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  max-height: calc(100vh - 120px);
 }
 
 .comments-header {
@@ -201,12 +202,29 @@ h1 {
   font-size: 14px;
   color: #5f6368;
   margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e0e0e0;
+  border-top: 2px solid #4285f4;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .comments-container {
   position: relative;
   flex: 1;
-  padding: 16px 0;
+  padding: 20px 12px;
 }
 
 .comment-bubble {
@@ -223,7 +241,13 @@ h1 {
   padding: 12px;
   margin-bottom: 16px;
   position: relative;
-  border-left: 4px solid #fbbc04;
+  border-left: 4px solid #4285f4;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.comment-content:hover {
+  transform: translateX(-2px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
 }
 
 .comment-content:before {
@@ -235,7 +259,7 @@ h1 {
   height: 0;
   border-top: 8px solid transparent;
   border-bottom: 8px solid transparent;
-  border-right: 8px solid #fbbc04;
+  border-right: 8px solid #4285f4;
 }
 
 .comment-header {
@@ -245,10 +269,10 @@ h1 {
 }
 
 .comment-avatar {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  background-color: #1a73e8;
+  background-color: #4285f4;
   color: white;
   display: flex;
   justify-content: center;
@@ -266,8 +290,9 @@ h1 {
 
 .comment-text {
   font-size: 14px;
-  line-height: 1.4;
-  color: #444;
+  line-height: 1.5;
+  color: #333;
+  white-space: pre-wrap;
 }
 
 .typing-indicator {
@@ -275,6 +300,15 @@ h1 {
   animation: blink 1s step-end infinite;
   margin-left: 2px;
   color: #666;
+}
+
+.completion-indicator {
+  display: inline-block;
+  margin-left: 6px;
+  color: #4caf50;
+  font-size: 12px;
+  opacity: 0.8;
+  vertical-align: middle;
 }
 
 .no-comments {
@@ -347,4 +381,39 @@ button:hover:not(:disabled) {
     right: auto;
     margin: 10px;
   }
+}
+
+/* Global Analysis Styles */
+.global-analysis {
+  background-color: #f0f8ff;
+  border-radius: 8px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.global-analysis p {
+  margin: 6px 0;
+  font-size: 14px;
+}
+
+.global-analysis-summary {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+  border-left: 4px solid #4285f4;
+}
+
+.global-analysis-summary h3 {
+  font-size: 16px;
+  margin-top: 0;
+  margin-bottom: 8px;
+  color: #4285f4;
+}
+
+.global-analysis-summary p {
+  margin: 6px 0;
+  font-size: 14px;
+  color: #444;
 }

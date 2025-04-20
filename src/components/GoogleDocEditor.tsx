@@ -7,22 +7,45 @@ interface AnalysisResult {
   is_complete?: boolean;
 }
 
+interface GlobalAnalysis {
+  tone: string;
+  subject_matter: string;
+  context_summary: string;
+}
+
 interface GoogleDocEditorProps {
   text: string;
   onTextChange: (text: string) => void;
   results: AnalysisResult[];
   isLoading: boolean;
+  globalAnalysis: GlobalAnalysis | null;
 }
 
 const GoogleDocEditor: React.FC<GoogleDocEditorProps> = ({ 
   text, 
   onTextChange, 
   results, 
-  isLoading 
+  isLoading,
+  globalAnalysis
 }) => {
   const handleTextChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     onTextChange(e.target.value);
   };
+
+  // Log when isLoading changes
+  useEffect(() => {
+    console.log("GoogleDocEditor: isLoading changed to", isLoading);
+    
+    // Add force refresh of rendering for loading state
+    if (!isLoading) {
+      const timer = setTimeout(() => {
+        // Force a re-render by touching state (via console log)
+        console.log("Ensuring loading indicator is hidden");
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading]);
 
   // Calculate the position of each note based on the chunk index
   const getCommentPosition = (index: number) => {
@@ -73,8 +96,14 @@ const GoogleDocEditor: React.FC<GoogleDocEditorProps> = ({
       <div className="doc-comments">
         <div className="comments-header">
           <div className="comments-title">Comments</div>
-          {isLoading && <div className="comments-status">Analyzing...</div>}
+          {isLoading && (
+            <div className="comments-status">
+              <div className="loading-spinner"></div>
+              <span>Analyzing document...</span>
+            </div>
+          )}
         </div>
+        {/* Global analysis is removed from UI display but still used internally */}
         {results.length > 0 && (
           <div className="comments-container">
             {[...results].sort((a, b) => a.chunk_index - b.chunk_index).map((result) => (
@@ -92,6 +121,9 @@ const GoogleDocEditor: React.FC<GoogleDocEditorProps> = ({
                     {result.analysis}
                     {!result.is_complete && result.analysis && (
                       <span className="typing-indicator">▌</span>
+                    )}
+                    {result.is_complete && (
+                      <span className="completion-indicator">✓</span>
                     )}
                   </div>
                 </div>
