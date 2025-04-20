@@ -1,8 +1,12 @@
 #root {
-  max-width: 1280px;
   margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  font-family: 'Roboto', Arial, sans-serif;
+  color: #202124;
+}
+
+body {
+  margin: 0;
+  background-color: #f8f9fa;
 }
 
 .logo {
@@ -44,98 +48,303 @@
 .app-container {
   display: flex;
   flex-direction: column;
-  padding: 2rem;
-  max-width: 1200px;
+  padding: 1rem;
+  max-width: 90%;
   margin: 0 auto;
-  font-family: sans-serif;
 }
 
-.editor-container {
-  display: flex;
-  gap: 1rem; /* Space between text area and sidebar */
-  margin-bottom: 1rem;
+h1 {
+  text-align: center;
+  color: #444;
+  font-weight: 500;
+  margin-bottom: 1.5rem;
 }
 
-.document-textarea {
-  flex-grow: 1; /* Text area takes up available space */
-  padding: 1rem;
-  border: 1px solid #ccc;
+.tone-indicator {
+  text-align: center;
+  background-color: #e8f0fe;
+  padding: 8px;
   border-radius: 4px;
-  font-size: 1rem;
-  min-height: 300px; /* Make it reasonably tall */
-  resize: vertical; /* Allow vertical resizing */
-}
-
-.analysis-sidebar {
-  width: 300px; /* Fixed width for the sidebar */
-  flex-shrink: 0; /* Prevent sidebar from shrinking */
-  border: 1px solid #eee;
-  border-radius: 4px;
-  padding: 1rem;
-  background-color: #f9f9f9;
-  overflow-y: auto; /* Add scroll if content overflows */
-  max-height: calc(300px + 2rem); /* Match initial text area height + padding */
-}
-
-.analysis-sidebar h2 {
-  margin-top: 0;
-  margin-bottom: 1rem;
-  border-bottom: 1px solid #ddd;
-  padding-bottom: 0.5rem;
-}
-
-.analysis-comment {
   margin-bottom: 16px;
-  padding: 12px;
+}
+
+/* Google Doc Editor Styles */
+.google-doc-container {
+  display: flex;
+  background-color: #fff;
   border-radius: 8px;
-  background-color: #f5f5f5;
-  transition: background-color 0.3s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+  height: 70vh;
+  position: relative;
+  margin-bottom: 20px;
 }
 
-.analysis-comment:has(.typing-indicator) {
-  background-color: #f0f7ff;
+.doc-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #e0e0e0;
 }
 
-.analysis-comment strong {
-  display: block;
-  margin-bottom: 0.25rem;
-  color: #333;
+.doc-header {
+  padding: 8px 16px;
+  border-bottom: 1px solid #e0e0e0;
+  background-color: #f8f9fa;
+  border-top-left-radius: 8px;
 }
 
-.error-message {
-  color: red;
-  font-weight: bold;
+.doc-title {
+  font-size: 18px;
+  font-weight: 500;
+  color: #444;
+  margin-bottom: 8px;
 }
 
-button {
-  padding: 0.75rem 1.5rem;
-  font-size: 1rem;
+/* Toolbar styles */
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.toolbar-group {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.toolbar-item {
+  color: #444;
   cursor: pointer;
-  background-color: #007bff;
-  color: white;
-  border: none;
+  padding: 2px 4px;
+}
+
+.toolbar-item:hover {
+  background-color: rgba(0, 0, 0, 0.08);
   border-radius: 4px;
-  transition: background-color 0.2s ease;
 }
 
-button:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
+.toolbar-group.formatting {
+  gap: 8px;
+  margin-top: 4px;
+  padding-bottom: 4px;
 }
 
-button:hover:not(:disabled) {
-  background-color: #0056b3;
+.toolbar-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  border-radius: 4px;
+  font-weight: 500;
 }
 
-/* Add typing indicator animation */
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+.toolbar-icon:hover {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+.toolbar-separator {
+  width: 1px;
+  height: 20px;
+  background-color: #dadce0;
+  margin: 0 4px;
+}
+
+.doc-body {
+  flex: 1;
+  padding: 20px 30px;
+  overflow-y: auto;
+}
+
+.doc-textarea {
+  width: 100%;
+  height: 100%;
+  border: none;
+  resize: none;
+  font-size: 16px;
+  line-height: 1.5;
+  outline: none;
+  font-family: 'Arial', sans-serif;
+  padding: 0;
+}
+
+.doc-comments {
+  width: 300px;
+  background-color: #f8f9fa;
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+  position: relative;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.comments-header {
+  padding: 16px;
+  border-bottom: 1px solid #e0e0e0;
+  position: sticky;
+  top: 0;
+  background-color: #f8f9fa;
+  z-index: 3;
+}
+
+.comments-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #444;
+}
+
+.comments-status {
+  font-size: 14px;
+  color: #5f6368;
+  margin-top: 4px;
+}
+
+.comments-container {
+  position: relative;
+  flex: 1;
+  padding: 16px 0;
+}
+
+.comment-bubble {
+  position: absolute;
+  right: 16px;
+  width: 90%;
+  z-index: 2;
+}
+
+.comment-content {
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  padding: 12px;
+  margin-bottom: 16px;
+  position: relative;
+  border-left: 4px solid #fbbc04;
+}
+
+.comment-content:before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 12px;
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-right: 8px solid #fbbc04;
+}
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.comment-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: #1a73e8;
+  color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  margin-right: 8px;
+}
+
+.comment-author {
+  font-size: 13px;
+  font-weight: 500;
+  color: #202124;
+}
+
+.comment-text {
+  font-size: 14px;
+  line-height: 1.4;
+  color: #444;
 }
 
 .typing-indicator {
   display: inline-block;
   animation: blink 1s step-end infinite;
-  margin-left: 4px;
+  margin-left: 2px;
   color: #666;
+}
+
+.no-comments {
+  padding: 20px 16px;
+  color: #5f6368;
+  font-size: 14px;
+  text-align: center;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.action-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+button {
+  padding: 8px 16px;
+  font-size: 14px;
+  background-color: #1a73e8;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+}
+
+button:disabled {
+  background-color: #dadce0;
+  color: #5f6368;
+  cursor: not-allowed;
+}
+
+button:hover:not(:disabled) {
+  background-color: #1765cc;
+}
+
+.error-message {
+  color: #ea4335;
+  font-weight: 500;
+  margin-top: 0;
+  text-align: center;
+}
+
+/* Media Queries for Responsiveness */
+@media (max-width: 768px) {
+  .google-doc-container {
+    flex-direction: column;
+    height: auto;
+  }
+  
+  .doc-content {
+    border-right: none;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  
+  .doc-comments {
+    width: 100%;
+    height: 300px;
+  }
+  
+  .comment-bubble {
+    position: relative;
+    right: auto;
+    margin: 10px;
+  }
 }

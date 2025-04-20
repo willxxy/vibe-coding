@@ -26,36 +26,56 @@ logging.info(f"Using device: {DEVICE}")
 # --- End Device Setup ---
 
 # --- Model Loading ---
-MODEL_ID = "google/gemma-3-1b-it"
-model = None
-tokenizer = None
+GLOBAL_MODEL_ID = "google/gemma-3-1b-it"  # Model for document-wide analysis
+LOCAL_MODEL_ID = "google/gemma-3-1b-it"   # Model for chunk processing
 
-def load_model_and_tokenizer():
-    global model, tokenizer
-    logging.info(f"Loading model: {MODEL_ID}...")
+global_model = None
+global_tokenizer = None
+local_model = None
+local_tokenizer = None
+
+def load_models_and_tokenizers():
+    global global_model, global_tokenizer, local_model, local_tokenizer
+    
+    # Load Global LLM
+    logging.info(f"Loading global model: {GLOBAL_MODEL_ID}...")
     try:
-        # Removed quantization_config
-        # Load model and send it to the determined device
-        model = Gemma3ForCausalLM.from_pretrained(
-            MODEL_ID,
-            # device_map="auto" is less reliable without accelerate+bitsandbytes handling complex mapping.
-            # Explicitly map to the detected device.
-            # torch_dtype=torch.bfloat16 # Optional: Try bfloat16 if MPS supports it well and default precision is too slow/memory heavy
-        ).to(DEVICE).eval() # Set model to evaluation mode and move to device
-
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-        logging.info(f"Model and tokenizer loaded successfully onto {DEVICE}.")
+        global_model = Gemma3ForCausalLM.from_pretrained(
+            GLOBAL_MODEL_ID,
+        ).to(DEVICE).eval()
+        global_tokenizer = AutoTokenizer.from_pretrained(GLOBAL_MODEL_ID)
+        logging.info(f"Global model loaded successfully onto {DEVICE}.")
     except Exception as e:
-        logging.error(f"Error loading model: {e}")
+        logging.error(f"Error loading global model: {e}")
+    
+    # Load Local LLM
+    logging.info(f"Loading local model: {LOCAL_MODEL_ID}...")
+    try:
+        local_model = Gemma3ForCausalLM.from_pretrained(
+            LOCAL_MODEL_ID,
+        ).to(DEVICE).eval()
+        local_tokenizer = AutoTokenizer.from_pretrained(LOCAL_MODEL_ID)
+        logging.info(f"Local model loaded successfully onto {DEVICE}.")
+    except Exception as e:
+        logging.error(f"Error loading local model: {e}")
 
-load_model_and_tokenizer() # Load the model when the application starts
+load_models_and_tokenizers() # Load both models when the application starts
 # --- End Model Loading ---
 
 # --- Inference Helper ---
-def run_inference(prompt_text, system_message="You are a helpful assistant.", max_new_tokens=128, stream=False):
-    """Runs inference using the loaded model and tokenizer."""
+def run_inference(prompt_text, system_message="You are a helpful assistant.", max_new_tokens=128, stream=False, model_type="global"):
+    """Runs inference using the specified model and tokenizer."""
+    
+    # Select the appropriate model and tokenizer
+    if model_type == "global":
+        model = global_model
+        tokenizer = global_tokenizer
+    else:  # model_type == "local"
+        model = local_model
+        tokenizer = local_tokenizer
+    
     if not model or not tokenizer:
-        logging.error("Model or tokenizer not loaded, cannot run inference.")
+        logging.error(f"{model_type.capitalize()} model or tokenizer not loaded, cannot run inference.")
         return None
 
     messages = [
@@ -81,12 +101,12 @@ def run_inference(prompt_text, system_message="You are a helpful assistant.", ma
             return_tensors="pt",
         ).to(DEVICE) # Move inputs to the same device as the model
 
-        logging.info(f"Running inference on {DEVICE} with max_new_tokens={max_new_tokens}...")
+        logging.info(f"Running {model_type} inference on {DEVICE} with max_new_tokens={max_new_tokens}...")
         
         if stream:
             # For streaming mode, use the streaming generator
             input_token_len = inputs["input_ids"].shape[1]
-            return generate_stream(inputs, input_token_len, max_new_tokens)
+            return generate_stream(inputs, input_token_len, max_new_tokens, model, tokenizer)
         else:
             # Non-streaming mode (batch generation)
             with torch.inference_mode():
@@ -98,15 +118,20 @@ def run_inference(prompt_text, system_message="You are a helpful assistant.", ma
             generated_tokens = outputs[0][input_token_len:]
             result_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
 
-            logging.info("Inference completed.")
+            logging.info(f"{model_type.capitalize()} inference completed.")
             return result_text.strip()
 
     except Exception as e:
-        logging.error(f"Error during inference: {e}")
+        logging.error(f"Error during {model_type} inference: {e}")
         return None
 
-def generate_stream(inputs, input_token_len, max_new_tokens=128):
+def generate_stream(inputs, input_token_len, max_new_tokens=128, model=None, tokenizer=None):
     """Generator function that yields tokens as they're generated."""
+    # Use the provided model and tokenizer
+    if model is None or tokenizer is None:
+        logging.error("Model or tokenizer not provided for streaming.")
+        return
+        
     generated_text = ""
     
     # Initialize generation with input ids 
@@ -165,12 +190,12 @@ def chunk_sentences(sentences, n):
 def home():
     return "Backend server is running!"
 
-# Main analysis endpoint - Modified for Streaming
+# Main analysis endpoint - Modified for two-LLM approach
 @app.route('/analyze', methods=['POST'])
 def analyze_document():
-    if not model or not tokenizer:
+    if not global_model or not global_tokenizer or not local_model or not local_tokenizer:
          # Still return JSON for initial errors before streaming starts
-         return jsonify({"error": "Model not loaded. Check server logs."}), 500
+         return jsonify({"error": "Models not loaded. Check server logs."}), 500
 
     data = request.get_json()
     if not data or 'text' not in data:
@@ -184,44 +209,96 @@ def analyze_document():
 
     def generate_analysis():
         try:
-            # 1. Determine Overall Tone (Global LLM task)
-            logging.info("Determining overall tone...")
+            # --- Global LLM Analysis (Document-wide) ---
+            logging.info("Performing global document analysis...")
+            
+            # 1. Determine Overall Tone
             tone_prompt = f"""Analyze the following text and determine its primary purpose or tone. Respond with only ONE OR TWO words from this list: [Personal Reflection, Academic Note, Creative Writing, Technical Instruction, Correction Needed, Idea Generation, Factual Summary, Question Posing].\n\n                        Text:\n                        ---\n                        {full_text}\n                        ---\n\n                        Primary Purpose/Tone:"""
             
-            # First generate tone - not using streaming for this part
-            determined_tone = run_inference(tone_prompt, system_message="You are an expert text analyst.", max_new_tokens=10)
+            determined_tone = run_inference(
+                tone_prompt, 
+                system_message="You are an expert text analyst.", 
+                max_new_tokens=10, 
+                model_type="global"
+            )
 
             if not determined_tone:
                 logging.error("Failed to determine text tone. Stopping stream.")
-                # Yield an error event for the frontend
                 error_payload = json.dumps({"error": "Failed to determine text tone."})
                 yield f"event: error\ndata: {error_payload}\n\n"
-                return # Stop the generator
-
+                return
+            
             logging.info(f"Determined tone: {determined_tone}")
-            # Yield the tone event
-            tone_payload = json.dumps({"overall_tone": determined_tone})
-            yield f"event: tone\ndata: {tone_payload}\n\n"
-
-            # --- Analyze Chunks (Local LLM Task) ---
-            logging.info(f"Splitting text into sentences...")
+            
+            # 2. Determine Subject Matter
+            subject_prompt = f"""Analyze the following text and determine its subject matter or domain. Respond with only ONE OR TWO words describing what this text is about.\n\n                        Text:\n                        ---\n                        {full_text}\n                        ---\n\n                        Subject Matter:"""
+            
+            subject_matter = run_inference(
+                subject_prompt, 
+                system_message="You are an expert text analyst.", 
+                max_new_tokens=10, 
+                model_type="global"
+            )
+            
+            logging.info(f"Determined subject matter: {subject_matter}")
+            
+            # 3. Generate a brief context summary
+            summary_prompt = f"""Provide a brief summary (2-3 sentences) of the following text that captures its main points or context.\n\n                        Text:\n                        ---\n                        {full_text}\n                        ---\n\n                        Summary:"""
+            
+            context_summary = run_inference(
+                summary_prompt, 
+                system_message="You are an expert text analyst.", 
+                max_new_tokens=100, 
+                model_type="global"
+            )
+            
+            logging.info(f"Generated context summary")
+            
+            # Combine global analysis results
+            global_analysis = {
+                "tone": determined_tone,
+                "subject_matter": subject_matter,
+                "context_summary": context_summary
+            }
+            
+            # Send global analysis to client
+            global_payload = json.dumps(global_analysis)
+            yield f"event: global_analysis\ndata: {global_payload}\n\n"
+            
+            # --- Local LLM Processing (Chunk-based) ---
+            logging.info(f"Splitting text into sentences for local processing...")
             sentences = split_into_sentences(full_text)
             logging.info(f"Found {len(sentences)} sentences. Chunking into groups of {chunk_size_n}...")
 
             chunk_index = 0
             for sentence_chunk in chunk_sentences(sentences, chunk_size_n):
                 chunk_text = " ".join(sentence_chunk)
-                logging.info(f"Analyzing chunk {chunk_index + 1}...")
+                logging.info(f"Analyzing chunk {chunk_index + 1} with local LLM...")
 
-                system_message_local = f"You are an assistant analyzing a text identified as: {determined_tone}."
-                prompt_local = f"""Given the overall text is identified as '{determined_tone}', analyze the following excerpt.\n\n                        Provide a brief analysis, suggestion, or reflection relevant to the tone. For example:\n                        - If 'Correction Needed', suggest grammatical or factual corrections.\n                        - If 'Personal Reflection', offer a thoughtful comment or question.\n                        - If 'Academic Note', summarize the key point or ask a clarifying question.\n                        - If 'Idea Generation', suggest a related idea or how to expand on it.\n\n                        Excerpt:\n                        ---\n                        {chunk_text}\n                        ---\n\n                        Analysis/Suggestion:"""
+                # Create a system message that includes the global context
+                system_message_local = f"""You are analyzing text that has been identified as:
+                - Tone: {determined_tone}
+                - Subject: {subject_matter}
+                - Context: {context_summary}
+                
+                Provide responses appropriate for this context."""
+                
+                prompt_local = f"""Given the overall document context, analyze the following excerpt and provide a helpful response. Only generate the response and nothing else.
+                
+                Excerpt:
+                ---
+                {chunk_text}
+                ---
+                
+                Your analysis/response:"""
 
-                # Use streaming mode for chunk analysis
+                # Use local LLM for streaming chunk analysis
                 chunk_analysis_stream = run_inference(
                     prompt_local,
                     system_message=system_message_local,
                     max_new_tokens=100,
-                    stream=True
+                    stream=True,
+                    model_type="local"
                 )
                 
                 # Initialize empty analysis for this chunk

@@ -1,5 +1,6 @@
-import { useState, ChangeEvent, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
+import GoogleDocEditor from './components/GoogleDocEditor'
 
 // Define types for the analysis results
 interface AnalysisResult {
@@ -183,38 +184,23 @@ function App() {
 
   return (
     <div className="app-container">
-      <h1>Document Analysis</h1>
-      {overallTone && <p>Overall Tone: <strong>{overallTone}</strong></p>}
-      <div className="editor-container">
-        <textarea
-          className="document-textarea"
-          value={text}
-          onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
-          placeholder="Enter text here to analyze..."
-          rows={15}
-          disabled={isLoading}
-        />
-        <div className="analysis-sidebar">
-          <h2>Analysis</h2>
-          {isLoading && <p>Analyzing...</p>}
-          {error && <p className="error-message">Error: {error}</p>}
-          {results.length > 0 && (
-            <ul>
-              {[...results].sort((a, b) => a.chunk_index - b.chunk_index).map((result) => (
-                <li key={result.chunk_index} className="analysis-comment">
-                  <strong>Chunk {result.chunk_index + 1}:</strong> {result.analysis}
-                  {!result.is_complete && result.analysis && <span className="typing-indicator">▌</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-          {!isLoading && results.length === 0 && !error && <p>Analysis results will appear here.</p>}
-        </div>
+      <h1>Google Doc Style Editor</h1>
+      {overallTone && <p className="tone-indicator">Overall Tone: <strong>{overallTone}</strong></p>}
+      
+      <GoogleDocEditor 
+        text={text}
+        onTextChange={setText}
+        results={results}
+        isLoading={isLoading}
+      />
+      
+      <div className="action-buttons">
+        <button onClick={handleAnalyze} disabled={isLoading || !text.trim()}>
+          {isLoading ? 'Analyzing...' : 'Analyze Text'}
+        </button>
+        {isLoading && <button onClick={closeConnection}>Cancel</button>}
+        {error && <p className="error-message">Error: {error}</p>}
       </div>
-      <button onClick={handleAnalyze} disabled={isLoading || !text.trim()}>
-        {isLoading ? 'Analyzing...' : 'Analyze Text'}
-      </button>
-      {isLoading && <button onClick={closeConnection}>Cancel</button>}
     </div>
   )
 }
