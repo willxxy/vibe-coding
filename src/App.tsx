@@ -45,6 +45,7 @@ function App() {
   // Optimize token updates batching
   const pendingTokensRef = useRef<Map<number, string>>(new Map());
   const tokenUpdateTimeoutRef = useRef<number | null>(null);
+  const tokenBatchSizeRef = useRef<number>(0);
   
   // Check if all analysis chunks are complete
   const checkIfAnalysisComplete = useCallback(() => {
@@ -118,51 +119,38 @@ function App() {
       });
       
       pendingTokensRef.current.clear();
+      tokenBatchSizeRef.current = 0;
       return modified ? newResults : prevResults;
     });
     
     tokenUpdateTimeoutRef.current = null;
   }, []);
 
-  // Schedule token flush with debouncing
+  // Schedule token flush with adaptive timing
   const scheduleTokenFlush = useCallback(() => {
+    // For very small token batches, use a longer timeout for efficiency
+    let flushDelay = 10; // base delay in ms
+    
+    // Adaptive timing based on batch size
+    if (tokenBatchSizeRef.current > 100) {
+      flushDelay = 5; // Flush quickly for large batches
+    } else if (tokenBatchSizeRef.current < 20) {
+      flushDelay = 30; // Wait longer for small batches
+    }
+    
+    // If we already have a timeout scheduled, don't schedule another
     if (tokenUpdateTimeoutRef.current !== null) return;
     
     tokenUpdateTimeoutRef.current = window.setTimeout(() => {
       flushTokenUpdates();
-    }, 20); // Balance between responsive streaming and performance
+    }, flushDelay);
   }, [flushTokenUpdates]);
 
   // Optimized token update handler
   const handleTokenUpdate = useCallback((update: TokenUpdate) => {
     const { chunk_index, token, is_complete } = update;
     
-    // Direct update for short single tokens to preserve streaming feel
-    if (token.length === 1) {
-      setResults(prevResults => {
-        const resultIndex = prevResults.findIndex(r => 
-          r.chunk_index === chunk_index && r.session_id === analysisSessionRef.current
-        );
-        
-        if (resultIndex === -1) return prevResults;
-        
-        // Create new array only when we need to modify an element
-        const newResults = [...prevResults];
-        newResults[resultIndex] = {
-          ...newResults[resultIndex],
-          analysis: newResults[resultIndex].analysis + token,
-          is_complete: is_complete
-        };
-        return newResults;
-      });
-      return;
-    }
-    
-    // Batch longer token sequences
-    const current = pendingTokensRef.current.get(chunk_index) || '';
-    pendingTokensRef.current.set(chunk_index, current + token);
-    
-    // Update completion status if needed
+    // Immediately update completion status if needed
     if (is_complete) {
       setResults(prevResults => 
         prevResults.map(result => {
@@ -172,8 +160,40 @@ function App() {
           return result;
         })
       );
+      
+      // Force flush any pending tokens for this chunk
+      const pendingToken = pendingTokensRef.current.get(chunk_index);
+      if (pendingToken) {
+        const currentToken = pendingToken;
+        pendingTokensRef.current.delete(chunk_index);
+        tokenBatchSizeRef.current -= currentToken.length;
+        
+        // Update with the final token
+        setResults(prevResults => {
+          const resultIndex = prevResults.findIndex(r => 
+            r.chunk_index === chunk_index && r.session_id === analysisSessionRef.current
+          );
+          
+          if (resultIndex === -1) return prevResults;
+          
+          const newResults = [...prevResults];
+          newResults[resultIndex] = {
+            ...newResults[resultIndex],
+            analysis: newResults[resultIndex].analysis + currentToken,
+            is_complete: true
+          };
+          return newResults;
+        });
+      }
+      return;
     }
     
+    // Batch token updates
+    const current = pendingTokensRef.current.get(chunk_index) || '';
+    pendingTokensRef.current.set(chunk_index, current + token);
+    tokenBatchSizeRef.current += token.length;
+    
+    // Schedule the token flush
     scheduleTokenFlush();
   }, [scheduleTokenFlush]);
 

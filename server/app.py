@@ -107,38 +107,66 @@ def run_inference(prompt_text, system_message="You are a helpful assistant.", ma
         logging.error("Model or tokenizer not loaded, cannot run inference.")
         return None
 
-    # Truncate very long inputs to prevent slow processing
-    max_input_length = 1024
-    if len(prompt_text) > max_input_length:
-        logging.warning(f"Input text truncated from {len(prompt_text)} to {max_input_length} chars")
-        prompt_text = prompt_text[:max_input_length] + "..."
-
-    messages = [[
-        {
-            "role": "system",
-            "content": [{"type": "text", "text": system_message}],
-        },
-        {
-            "role": "user",
-            "content": [{"type": "text", "text": prompt_text}],
-        },
-    ]]
-
     try:
-        # Use the tokenizer's chat template and move inputs to the device
-        inputs = tokenizer.apply_chat_template(
-            messages,
-            add_generation_prompt=True,
-            tokenize=True,
-            return_dict=True,
-            return_tensors="pt",
-        ).to(DEVICE)
+        # Truncate very long inputs to prevent slow processing or OOM
+        max_input_length = 2048
+        original_length = len(prompt_text)
+        
+        if len(prompt_text) > max_input_length:
+            logging.warning(f"Input text truncated from {len(prompt_text)} to {max_input_length} chars")
+            
+            # Try to truncate at a sensible point like a paragraph break
+            truncation_point = prompt_text.rfind("\n\n", 0, max_input_length)
+            if truncation_point == -1 or truncation_point < max_input_length * 0.5:
+                # No good paragraph break, try sentence
+                truncation_point = prompt_text.rfind(". ", 0, max_input_length)
+            
+            if truncation_point != -1 and truncation_point > max_input_length * 0.5:
+                prompt_text = prompt_text[:truncation_point + 1] + "\n\n... [text truncated]"
+            else:
+                # No good break point found, truncate directly
+                prompt_text = prompt_text[:max_input_length] + "\n\n... [text truncated]"
+        
+        # Create the message format expected by Gemma 3
+        messages = [[
+            {
+                "role": "system",
+                "content": [{"type": "text", "text": system_message}],
+            },
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": prompt_text}],
+            },
+        ]]
+
+        # Apply chat template with error handling
+        try:
+            inputs = tokenizer.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                tokenize=True,
+                return_dict=True,
+                return_tensors="pt",
+            ).to(DEVICE)
+        except Exception as e:
+            logging.error(f"Error applying chat template: {e}")
+            # Fallback to simpler prompt construction
+            prompt = f"{system_message}\n\nUser: {prompt_text}\n\nAssistant:"
+            inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
 
         input_token_len = inputs["input_ids"].shape[1]
         logging.info(f"Running inference with {input_token_len} input tokens and max_new_tokens={max_new_tokens}")
         
-        if input_token_len > 2048:
-            logging.warning(f"Very large input: {input_token_len} tokens, performance may be affected")
+        if input_token_len > 4096:
+            logging.warning(f"Very large input: {input_token_len} tokens exceeds safe limit. Truncating.")
+            # Truncate to avoid memory issues
+            inputs["input_ids"] = inputs["input_ids"][:, -4096:]
+            if "attention_mask" in inputs:
+                inputs["attention_mask"] = inputs["attention_mask"][:, -4096:]
+            input_token_len = 4096
+        
+        # Free up memory before generation
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
         
         if stream:
             # For streaming mode, use the streaming generator
@@ -150,7 +178,9 @@ def run_inference(prompt_text, system_message="You are a helpful assistant.", ma
                 outputs = model.generate(
                     **inputs, 
                     max_new_tokens=max_new_tokens, 
-                    do_sample=False
+                    do_sample=False,
+                    temperature=0.7,  # Add slight temperature for better responses
+                    num_beams=1  # Simple greedy decoding is faster
                 )
 
             # Decode the output tokens
@@ -158,9 +188,15 @@ def run_inference(prompt_text, system_message="You are a helpful assistant.", ma
             result_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
 
             elapsed = time.time() - start_time
-            logging.info(f"Inference completed successfully in {elapsed:.2f}s")
+            token_rate = len(generated_tokens) / elapsed if elapsed > 0 else 0
+            logging.info(f"Inference completed in {elapsed:.2f}s ({token_rate:.1f} tokens/sec)")
             return result_text.strip()
 
+    except torch.cuda.OutOfMemoryError:
+        logging.error("CUDA out of memory during inference")
+        # Try to recover memory
+        torch.cuda.empty_cache()
+        return "Error: GPU memory exceeded during generation."
     except Exception as e:
         logging.error(f"Error during inference: {e}")
         return None
@@ -172,30 +208,61 @@ def generate_stream(inputs, input_token_len, max_new_tokens=128):
         logging.error("Model or tokenizer not provided for streaming.")
         return
         
-    with torch.inference_mode():
-        generation = inputs["input_ids"].clone()
-        
-        for _ in range(max_new_tokens):
-            # Run model on current sequence
-            outputs = model(generation)
-            next_token_logits = outputs.logits[:, -1, :]
+    try:
+        with torch.inference_mode():
+            # Track generation start time
+            start_time = time.time()
             
-            # Get the next token (greedy selection)
-            next_token = torch.argmax(next_token_logits, dim=-1, keepdim=True)
+            # Initialize generation with input
+            generation = inputs["input_ids"].clone()
             
-            # Break if EOS token
-            if next_token.item() == tokenizer.eos_token_id:
-                break
+            # Keep track of tokens for timing
+            tokens_generated = 0
+            last_log_time = start_time
+            
+            for _ in range(max_new_tokens):
+                # Run model on current sequence
+                outputs = model(generation)
+                next_token_logits = outputs.logits[:, -1, :]
                 
-            # Append token to the sequence
-            generation = torch.cat([generation, next_token], dim=-1)
-            
-            # Decode just the new token
-            new_token_text = tokenizer.decode(next_token[0], skip_special_tokens=True)
-            
-            # Only yield if there's actual text
-            if new_token_text:
-                yield new_token_text
+                # Get the next token (greedy selection)
+                next_token = torch.argmax(next_token_logits, dim=-1, keepdim=True)
+                
+                # Break if EOS token
+                if next_token.item() == tokenizer.eos_token_id:
+                    break
+                    
+                # Append token to the sequence
+                generation = torch.cat([generation, next_token], dim=-1)
+                
+                # Decode just the new token
+                new_token_text = tokenizer.decode(next_token[0], skip_special_tokens=True)
+                
+                # Only yield if there's actual text
+                if new_token_text:
+                    tokens_generated += 1
+                    yield new_token_text
+                
+                # Log progress periodically without affecting stream
+                current_time = time.time()
+                if current_time - last_log_time > 2.0:  # Log every 2 seconds
+                    elapsed = current_time - start_time
+                    token_rate = tokens_generated / elapsed if elapsed > 0 else 0
+                    logging.info(f"Generated {tokens_generated} tokens in {elapsed:.2f}s ({token_rate:.1f} tokens/sec)")
+                    last_log_time = current_time
+                    
+                # Check for timeout
+                if time.time() - start_time > 25:  # Hard cutoff before decorator timeout
+                    logging.warning("Streaming generation approaching timeout, stopping early")
+                    yield " [Generation stopped due to timeout]"
+                    break
+    
+    except torch.cuda.OutOfMemoryError:
+        logging.error("CUDA out of memory during token generation")
+        yield " [Error: GPU memory exceeded]"
+    except Exception as e:
+        logging.error(f"Error during token generation: {e}")
+        yield f" [Error during generation: {str(e)[:50]}...]"
 
 # --- Text Processing Helpers ---
 def split_into_sentences(text):
@@ -209,25 +276,55 @@ def split_into_sentences(text):
     # Add space after punctuation for splitting, handle existing spaces
     text = re.sub(r'([.!?])\s*', r'\1 ', text)
     
-    # Split by punctuation followed by space
-    parts = re.split(r'(?<=[.!?])\s+', text)
+    # Better sentence splitting with handling for common abbreviations
+    # This pattern looks for sentence-ending punctuation followed by a space and capital letter
+    # but excludes common abbreviations and other edge cases
+    sentence_pattern = r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!)\s+(?=[A-Z])'
+    sentences = re.split(sentence_pattern, text)
+    
+    # Further split by explicit newlines that might indicate paragraph breaks
+    result = []
+    for sentence in sentences:
+        # Split by paragraph breaks if they exist
+        paragraphs = re.split(r'\n{2,}', sentence)
+        for para in paragraphs:
+            if para.strip():
+                # For very long paragraphs, try to break them at punctuation
+                if len(para) > 300:
+                    parts = re.split(r'(?<=[.!?])\s+', para)
+                    result.extend([p.strip() for p in parts if p.strip()])
+                else:
+                    result.append(para.strip())
     
     # Filter empty strings and strip whitespace
-    sentences = [part.strip() for part in parts if part.strip()]
+    result = [part.strip() for part in result if part.strip()]
     
     # Handle case where splitting didn't work (e.g., no punctuation)
-    if not sentences and text.strip():
-        sentences = [text.strip()]
+    if not result and text.strip():
+        # For long text without punctuation, split by length
+        if len(text) > 200:
+            # Split into roughly equal chunks of ~150 chars
+            chunk_size = 150
+            chunks = [text[i:i+chunk_size].strip() for i in range(0, len(text), chunk_size)]
+            result = [chunk for chunk in chunks if chunk]
+        else:
+            result = [text.strip()]
     
-    return sentences
+    return result
 
 def create_text_chunks(text, chunk_size=3, overlap=1):
-    """Split text into overlapping chunks of roughly n sentences each."""
+    """Split text into overlapping chunks of roughly n sentences each with improved handling for various text formats."""
     sentences = split_into_sentences(text)
     
     # If no sentences found, return the whole text as one chunk
     if not sentences:
         return [text] if text.strip() else []
+    
+    # Use a smaller chunk size for very long sentences
+    avg_sentence_length = sum(len(s) for s in sentences) / len(sentences)
+    if avg_sentence_length > 150:
+        logging.info(f"Text has very long sentences (avg {avg_sentence_length:.1f} chars), reducing chunk size")
+        chunk_size = max(2, chunk_size - 1)
     
     chunks = []
     i = 0
@@ -236,6 +333,17 @@ def create_text_chunks(text, chunk_size=3, overlap=1):
         # Get chunk of size chunk_size or remaining sentences
         end_idx = min(i + chunk_size, len(sentences))
         chunk = " ".join(sentences[i:end_idx])
+        
+        # Try to balance chunks that are too short or too long
+        if len(chunk) < 100 and end_idx < len(sentences):
+            # Chunk is too small, add another sentence if available
+            end_idx = min(end_idx + 1, len(sentences))
+            chunk = " ".join(sentences[i:end_idx])
+        elif len(chunk) > 800 and end_idx - i > 1:
+            # Chunk is too large, reduce size
+            end_idx = i + max(1, chunk_size - 1)
+            chunk = " ".join(sentences[i:end_idx])
+        
         chunks.append(chunk)
         
         # Move window with overlap
@@ -288,23 +396,23 @@ def analyze_document():
                 logging.warning(f"Document too large ({len(text_for_analysis)} chars), truncating for analysis")
                 text_for_analysis = full_text[:8000] + "... [document truncated for analysis]"
             
-            # Global analysis prompt
-            global_prompt = f"""Analyze the following text and provide these specific details:
-1. PRIMARY TONE: ONE word describing tone (e.g., casual, formal, academic)
-2. SUBJECT MATTER: ONE or TWO words describing topic
-3. CONTEXT SUMMARY: 1-2 sentences summarizing the text
+            # Improved Global analysis prompt
+            global_prompt = f"""Analyze the following document and provide three specific elements:
 
-Be very concise.
+1. TONE: What is the emotional or stylistic quality of this text? (e.g., formal, informal, academic, personal, technical, casual, serious, humorous)
+2. SUBJECT MATTER: What general category or domain does this text belong to? (e.g., journal entry, technical documentation, creative writing, academic notes)
+3. CONTEXT SUMMARY: Provide a 1-2 sentence summary capturing the key context of this document.
 
-Text:
----
+TEXT TO ANALYZE:
+----------------
 {text_for_analysis}
----
+----------------
 
-Format your response exactly like this:
-TONE: [one word]
-SUBJECT: [one or two words]
-SUMMARY: [1-2 sentence summary]"""
+Your response MUST follow this exact format:
+TONE: [single word for tone]
+SUBJECT: [1-2 words for subject matter]
+SUMMARY: [1-2 sentence summary]
+"""
             
             # Progress update
             yield f"event: progress\ndata: {json.dumps({'message': 'Analyzing document context...'})}\n\n"
@@ -312,8 +420,8 @@ SUMMARY: [1-2 sentence summary]"""
             # Run global analysis
             global_analysis_text = run_inference(
                 global_prompt, 
-                system_message="You are an expert text analyst. Be concise.", 
-                max_new_tokens=100
+                system_message="You are an expert text analyst. Provide precise, structured analysis following the exact format requested.", 
+                max_new_tokens=150
             )
 
             if not global_analysis_text:
@@ -344,8 +452,8 @@ SUMMARY: [1-2 sentence summary]"""
             # Progress update
             yield f"event: progress\ndata: {json.dumps({'message': 'Preparing text chunks...'})}\n\n"
             
-            # Create text chunks with optimal size
-            text_chunks = create_text_chunks(full_text, chunk_size=min(chunk_size, 3), overlap=0)
+            # Create text chunks with minimal overlap for better coherence
+            text_chunks = create_text_chunks(full_text, chunk_size=min(chunk_size, 4), overlap=1)
             
             # Limit number of chunks for performance
             max_chunks = 15
@@ -359,9 +467,13 @@ SUMMARY: [1-2 sentence summary]"""
                 
             logging.info(f"Created {len(text_chunks)} chunks for analysis")
 
-            # Create system message for local LLM
-            system_message_local = f"""You are analyzing a document with tone: {tone}, subject: {subject_matter}.
-Provide brief, helpful responses about each excerpt."""
+            # Improved system message for local LLM with clearer context
+            system_message_local = f"""You are an AI assistant analyzing document excerpts.
+Context information: This document has been identified as having a {tone} tone and is about {subject_matter}.
+Overall document summary: {context_summary}
+
+Your task is to provide insightful, helpful analysis for each excerpt based on this context.
+Keep responses concise, focused, and relevant to both the specific excerpt and the overall document context."""
 
             # Process chunks
             for chunk_index, chunk_content in enumerate(text_chunks):
@@ -374,15 +486,19 @@ Provide brief, helpful responses about each excerpt."""
                 # Progress update
                 yield f"event: progress\ndata: {json.dumps({'message': f'Analyzing section {chunk_index + 1}/{len(text_chunks)}...'})}\n\n"
                 
-                # Create prompt for local LLM
-                prompt_local = f"""Given a document about {subject_matter} with {tone} tone, analyze:
+                # Improved prompt for local LLM with better context integration
+                prompt_local = f"""Analyze the following excerpt from a {subject_matter} document with {tone} tone:
 
-Excerpt:
----
+EXCERPT:
+--------
 {chunk_trim}
----
+--------
 
-Your brief response:"""
+Provide a brief, focused response that:
+1. Addresses this specific excerpt directly
+2. Maintains consistency with the document's overall context
+3. Offers valuable insights appropriate to this type of content
+"""
 
                 # Send chunk initialization event
                 chunk_data = {
@@ -398,7 +514,7 @@ Your brief response:"""
                     chunk_analysis_stream = run_inference(
                         prompt_local,
                         system_message=system_message_local,
-                        max_new_tokens=100,
+                        max_new_tokens=150,
                         stream=True
                     )
                     
