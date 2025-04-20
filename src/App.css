@@ -40,3 +40,86 @@
 .read-the-docs {
   color: #888;
 }
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+  font-family: sans-serif;
+}
+
+.editor-container {
+  display: flex;
+  gap: 1rem; /* Space between text area and sidebar */
+  margin-bottom: 1rem;
+}
+
+.document-textarea {
+  flex-grow: 1; /* Text area takes up available space */
+  padding: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+  min-height: 300px; /* Make it reasonably tall */
+  resize: vertical; /* Allow vertical resizing */
+}
+
+.analysis-sidebar {
+  width: 300px; /* Fixed width for the sidebar */
+  flex-shrink: 0; /* Prevent sidebar from shrinking */
+  border: 1px solid #eee;
+  border-radius: 4px;
+  padding: 1rem;
+  background-color: #f9f9f9;
+  overflow-y: auto; /* Add scroll if content overflows */
+  max-height: calc(300px + 2rem); /* Match initial text area height + padding */
+}
+
+.analysis-sidebar h2 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 0.5rem;
+}
+
+.analysis-comment {
+  background-color: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.analysis-comment strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: #333;
+}
+
+.error-message {
+  color: red;
+  font-weight: bold;
+}
+
+button {
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  cursor: pointer;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+}
+
+button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+button:hover:not(:disabled) {
+  background-color: #0056b3;
+}

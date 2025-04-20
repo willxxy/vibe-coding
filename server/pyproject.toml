@@ -18,8 +18,10 @@ classifiers = [
 ]
 dependencies = [
     "Flask>=2.0.0",
-    "transformers>=4.0.0", # For loading and using LLMs
+    "transformers>=4.50.0", # Gemma 3 requires 4.50.0+
     "torch>=1.8.0", # Common backend for transformers
+    "accelerate", # For efficient model loading
+    # "bitsandbytes", # Removed for Mac compatibility
     # Add other core dependencies here later (e.g., specific model requirements)
 ]
 
